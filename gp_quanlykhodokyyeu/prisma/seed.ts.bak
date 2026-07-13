@@ -1,0 +1,386 @@
+import "dotenv/config";
+import { PrismaPg } from "@prisma/adapter-pg";
+import {
+  PrismaClient,
+  CategoryCode,
+  ProductGender,
+  ItemCondition,
+} from "../src/generated/prisma/client";
+import bcrypt from "bcryptjs";
+
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+});
+
+const prisma = new PrismaClient({ adapter });
+
+async function upsertUser() {
+  const passwordHash = await bcrypt.hash("123456", 10);
+
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@khodo.vn" },
+    update: {
+      username: "admin01",
+      fullName: "Quản trị viên",
+      passwordHash,
+      role: "ADMIN",
+      isActive: true,
+    },
+    create: {
+      email: "admin@khodo.vn",
+      username: "admin01",
+      fullName: "Quản trị viên",
+      passwordHash,
+      role: "ADMIN",
+      isActive: true,
+    },
+  });
+
+  const staff = await prisma.user.upsert({
+    where: { email: "staff@khodo.vn" },
+    update: {
+      username: "staff01",
+      fullName: "Nhân viên kho",
+      passwordHash,
+      role: "STAFF",
+      isActive: true,
+    },
+    create: {
+      email: "staff@khodo.vn",
+      username: "staff01",
+      fullName: "Nhân viên kho",
+      passwordHash,
+      role: "STAFF",
+      isActive: true,
+    },
+  });
+
+  return { admin, staff };
+}
+
+async function upsertBranchAndWarehouse() {
+  const branch = await prisma.branch.upsert({
+    where: { code: "DN" },
+    update: {
+      name: "Chi nhánh Đà Nẵng",
+      address: "Đà Nẵng",
+      phone: "0900000000",
+      isActive: true,
+    },
+    create: {
+      code: "DN",
+      name: "Chi nhánh Đà Nẵng",
+      address: "Đà Nẵng",
+      phone: "0900000000",
+      isActive: true,
+    },
+  });
+
+  const warehouse = await prisma.warehouse.upsert({
+    where: {
+      branchId_code: {
+        branchId: branch.id,
+        code: "KHO-DN",
+      },
+    },
+    update: {
+      name: "Kho đồ Đà Nẵng",
+      description: "Kho chính quản lý đồ kỷ yếu tại Đà Nẵng",
+      isActive: true,
+    },
+    create: {
+      branchId: branch.id,
+      code: "KHO-DN",
+      name: "Kho đồ Đà Nẵng",
+      description: "Kho chính quản lý đồ kỷ yếu tại Đà Nẵng",
+      isActive: true,
+    },
+  });
+
+  return { branch, warehouse };
+}
+
+async function upsertCategories() {
+  const shirt = await prisma.productCategory.upsert({
+    where: { code: CategoryCode.SHIRT },
+    update: { name: "Áo", hasSize: true, isActive: true },
+    create: { code: CategoryCode.SHIRT, name: "Áo", hasSize: true, isActive: true },
+  });
+
+  const pants = await prisma.productCategory.upsert({
+    where: { code: CategoryCode.PANTS },
+    update: { name: "Quần", hasSize: true, isActive: true },
+    create: { code: CategoryCode.PANTS, name: "Quần", hasSize: true, isActive: true },
+  });
+
+  const accessory = await prisma.productCategory.upsert({
+    where: { code: CategoryCode.ACCESSORY },
+    update: { name: "Phụ kiện", hasSize: false, isActive: true },
+    create: { code: CategoryCode.ACCESSORY, name: "Phụ kiện", hasSize: false, isActive: true },
+  });
+
+  return { shirt, pants, accessory };
+}
+
+async function upsertSizes() {
+  const s = await prisma.size.upsert({
+    where: { code: "S" },
+    update: { name: "S", sortOrder: 1, isActive: true },
+    create: { code: "S", name: "S", sortOrder: 1, isActive: true },
+  });
+
+  const m = await prisma.size.upsert({
+    where: { code: "M" },
+    update: { name: "M", sortOrder: 2, isActive: true },
+    create: { code: "M", name: "M", sortOrder: 2, isActive: true },
+  });
+
+  const l = await prisma.size.upsert({
+    where: { code: "L" },
+    update: { name: "L", sortOrder: 3, isActive: true },
+    create: { code: "L", name: "L", sortOrder: 3, isActive: true },
+  });
+
+  return { s, m, l };
+}
+
+async function upsertStatuses() {
+  const available = await prisma.itemStatus.upsert({
+    where: { code: "AVAILABLE" },
+    update: { name: "Sẵn sàng", sortOrder: 1, isSystem: true, isActive: true },
+    create: { code: "AVAILABLE", name: "Sẵn sàng", sortOrder: 1, isSystem: true, isActive: true },
+  });
+
+  const rented = await prisma.itemStatus.upsert({
+    where: { code: "RENTED" },
+    update: { name: "Đang cho thuê", sortOrder: 2, isSystem: true, isActive: true },
+    create: { code: "RENTED", name: "Đang cho thuê", sortOrder: 2, isSystem: true, isActive: true },
+  });
+
+  const cleaning = await prisma.itemStatus.upsert({
+    where: { code: "CLEANING" },
+    update: { name: "Chờ xử lý", sortOrder: 3, isSystem: true, isActive: true },
+    create: { code: "CLEANING", name: "Chờ xử lý", sortOrder: 3, isSystem: true, isActive: true },
+  });
+
+  return { available, rented, cleaning };
+}
+
+async function upsertProducts(
+  categoryIds: { shirtId: string; pantsId: string },
+  sizeIds: { sId: string; mId: string; lId: string }
+) {
+  const shirt = await prisma.product.upsert({
+    where: { code: "AO-SOMI-KYYEU" },
+    update: {
+      name: "Áo sơ mi kỷ yếu",
+      categoryId: categoryIds.shirtId,
+      gender: ProductGender.UNISEX,
+      defaultSizeId: sizeIds.mId,
+      color: "Trắng",
+      description: "Áo sơ mi dùng cho chụp kỷ yếu",
+      isActive: true,
+    },
+    create: {
+      code: "AO-SOMI-KYYEU",
+      name: "Áo sơ mi kỷ yếu",
+      categoryId: categoryIds.shirtId,
+      gender: ProductGender.UNISEX,
+      defaultSizeId: sizeIds.mId,
+      color: "Trắng",
+      description: "Áo sơ mi dùng cho chụp kỷ yếu",
+      isActive: true,
+    },
+  });
+
+  const pants = await prisma.product.upsert({
+    where: { code: "QUAN-TAY-KYYEU" },
+    update: {
+      name: "Quần tây kỷ yếu",
+      categoryId: categoryIds.pantsId,
+      gender: ProductGender.UNISEX,
+      defaultSizeId: sizeIds.lId,
+      color: "Đen",
+      description: "Quần tây dùng cho chụp kỷ yếu",
+      isActive: true,
+    },
+    create: {
+      code: "QUAN-TAY-KYYEU",
+      name: "Quần tây kỷ yếu",
+      categoryId: categoryIds.pantsId,
+      gender: ProductGender.UNISEX,
+      defaultSizeId: sizeIds.lId,
+      color: "Đen",
+      description: "Quần tây dùng cho chụp kỷ yếu",
+      isActive: true,
+    },
+  });
+
+  return { shirt, pants };
+}
+
+async function upsertItem(params: {
+  itemCode: string;
+  barcode: string;
+  productId: string;
+  warehouseId: string;
+  sizeId: string;
+  statusId: string;
+  createdById: string;
+  updatedById: string;
+  note?: string;
+}) {
+  return prisma.item.upsert({
+    where: { itemCode: params.itemCode },
+    update: {
+      barcode: params.barcode,
+      productId: params.productId,
+      warehouseId: params.warehouseId,
+      sizeId: params.sizeId,
+      statusId: params.statusId,
+      condition: ItemCondition.GOOD,
+      note: params.note,
+      isActive: true,
+      updatedById: params.updatedById,
+    },
+    create: {
+      itemCode: params.itemCode,
+      barcode: params.barcode,
+      productId: params.productId,
+      warehouseId: params.warehouseId,
+      sizeId: params.sizeId,
+      statusId: params.statusId,
+      condition: ItemCondition.GOOD,
+      note: params.note,
+      isActive: true,
+      createdById: params.createdById,
+      updatedById: params.updatedById,
+    },
+  });
+}
+
+async function seedItems(input: {
+  warehouseId: string;
+  shirtProductId: string;
+  pantsProductId: string;
+  sizeSId: string;
+  sizeMId: string;
+  sizeLId: string;
+  availableStatusId: string;
+  rentedStatusId: string;
+  adminId: string;
+}) {
+  const items = [
+    {
+      itemCode: "AO001-S-01",
+      barcode: "BC-AO001-S-01",
+      productId: input.shirtProductId,
+      warehouseId: input.warehouseId,
+      sizeId: input.sizeSId,
+      statusId: input.availableStatusId,
+      note: "Áo sơ mi size S sẵn sàng",
+    },
+    {
+      itemCode: "AO001-M-01",
+      barcode: "BC-AO001-M-01",
+      productId: input.shirtProductId,
+      warehouseId: input.warehouseId,
+      sizeId: input.sizeMId,
+      statusId: input.availableStatusId,
+      note: "Áo sơ mi size M sẵn sàng",
+    },
+    {
+      itemCode: "AO001-L-01",
+      barcode: "BC-AO001-L-01",
+      productId: input.shirtProductId,
+      warehouseId: input.warehouseId,
+      sizeId: input.sizeLId,
+      statusId: input.rentedStatusId,
+      note: "Áo sơ mi size L đang cho thuê",
+    },
+    {
+      itemCode: "QN001-M-01",
+      barcode: "BC-QN001-M-01",
+      productId: input.pantsProductId,
+      warehouseId: input.warehouseId,
+      sizeId: input.sizeMId,
+      statusId: input.availableStatusId,
+      note: "Quần tây size M sẵn sàng",
+    },
+    {
+      itemCode: "QN001-L-01",
+      barcode: "BC-QN001-L-01",
+      productId: input.pantsProductId,
+      warehouseId: input.warehouseId,
+      sizeId: input.sizeLId,
+      statusId: input.availableStatusId,
+      note: "Quần tây size L sẵn sàng",
+    },
+  ];
+
+  for (const item of items) {
+    await upsertItem({
+      ...item,
+      createdById: input.adminId,
+      updatedById: input.adminId,
+    });
+  }
+}
+
+async function main() {
+  const { admin } = await upsertUser();
+  const { branch, warehouse } = await upsertBranchAndWarehouse();
+  const categories = await upsertCategories();
+  const sizes = await upsertSizes();
+  const statuses = await upsertStatuses();
+  const products = await upsertProducts(
+    { shirtId: categories.shirt.id, pantsId: categories.pants.id },
+    { sId: sizes.s.id, mId: sizes.m.id, lId: sizes.l.id }
+  );
+
+  await seedItems({
+    warehouseId: warehouse.id,
+    shirtProductId: products.shirt.id,
+    pantsProductId: products.pants.id,
+    sizeSId: sizes.s.id,
+    sizeMId: sizes.m.id,
+    sizeLId: sizes.l.id,
+    availableStatusId: statuses.available.id,
+    rentedStatusId: statuses.rented.id,
+    adminId: admin.id,
+  });
+
+  console.log("Seed hoàn tất");
+  console.log({
+    admin: {
+      email: "admin@khodo.vn",
+      username: "admin01",
+      password: "123456",
+      role: "ADMIN",
+    },
+    staff: {
+      email: "staff@khodo.vn",
+      username: "staff01",
+      password: "123456",
+      role: "STAFF",
+    },
+    branch: {
+      code: branch.code,
+      name: branch.name,
+    },
+    warehouse: {
+      code: warehouse.code,
+      name: warehouse.name,
+    },
+  });
+}
+
+main()
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (error) => {
+    console.error(error);
+    await prisma.$disconnect();
+    process.exit(1);
+  });

@@ -1,0 +1,507 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ProductGender {
+  MALE
+  FEMALE
+  UNISEX
+}
+
+enum ItemCondition {
+  GOOD
+  FAIR
+  DAMAGED
+}
+
+enum RentalGroupStatus {
+  DRAFT
+  REVIEWED
+  CONFIRMED
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum ImportBatchStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AllocationOrderStatus {
+  DRAFT
+  READY
+  PARTIALLY_ALLOCATED
+  ALLOCATED
+  RETURNED
+  CANCELLED
+}
+
+enum AllocationItemStatus {
+  ASSIGNED
+  PICKED_UP
+  RETURNED
+  MISSING
+  DAMAGED
+}
+
+enum ReferenceType {
+  ALLOCATION
+  RETURN
+  IMPORT
+  MANUAL
+  ADJUSTMENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  role         UserRole @default(STAFF)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  warehouses          UserWarehouse[]
+  createdRentalGroups RentalGroup[]       @relation("RentalGroupCreatedBy")
+  importBatches       ImportBatch[]
+  allocationOrders    AllocationOrder[]
+  itemStatusHistories ItemStatusHistory[]
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  warehouses   Warehouse[]
+  rentalGroups RentalGroup[]
+
+  @@index([name])
+  @@map("branches")
+}
+
+model Warehouse {
+  id          String   @id @default(cuid())
+  branchId    String   @map("branch_id")
+  code        String
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  branch           Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  users            UserWarehouse[]
+  items            Item[]
+  rentalGroups     RentalGroup[]
+  allocationOrders AllocationOrder[]
+  stockAlertRules  StockAlertRule[]
+
+  @@unique([branchId, code])
+  @@index([branchId, name])
+  @@map("warehouses")
+}
+
+model UserWarehouse {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  warehouseId String   @map("warehouse_id")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, warehouseId])
+  @@index([warehouseId])
+  @@map("user_warehouses")
+}
+
+model ProductCategory {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  description String?
+  hasSize     Boolean   @default(true) @map("hassize")
+  isActive    Boolean   @default(true) @map("isactive")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  products    Product[]
+  sizeRules   SizeRule[]
+
+  @@map("productcategories")
+}
+
+model Size {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  productSizes     ProductSize[]
+  items            Item[]
+  rentersSuggested Renter[]              @relation("RenterSuggestedSize")
+  rentersConfirmed Renter[]              @relation("RenterConfirmedSize")
+  sizeRules        SizeRule[]
+  allocationItems  AllocationOrderItem[]
+  stockAlertRules  StockAlertRule[]
+
+  @@index([sortOrder])
+  @@map("sizes")
+}
+
+model Product {
+  id          String         @id @default(cuid())
+  categoryId  String         @map("category_id")
+  code        String         @unique
+  name        String
+  gender      ProductGender?
+  description String?
+  imageUrl    String?        @map("imageurl")
+  hasSize     Boolean        @default(true) @map("hassize")
+  isActive    Boolean        @default(true) @map("isactive")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  category    ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  productSizes ProductSize[]
+  items       Item[]
+  stockAlertRules StockAlertRule[]
+
+  @@index([categoryId, name])
+  @@map("products")
+}
+
+model ProductSize {
+  id        String   @id @default(cuid())
+  productId String   @map("product_id")
+  sizeId    String   @map("size_id")
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size    Size    @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, sizeId])
+  @@index([sizeId])
+  @@map("product_sizes")
+}
+
+model ItemStatus {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  color     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items         Item[]
+  fromHistories ItemStatusHistory[] @relation("ItemStatusHistoryFrom")
+  toHistories   ItemStatusHistory[] @relation("ItemStatusHistoryTo")
+
+  @@map("item_statuses")
+}
+
+model Item {
+  id           String        @id @default(cuid())
+  productId    String        @map("product_id")
+  warehouseId  String        @map("warehouse_id")
+  sizeId       String?       @map("size_id")
+  statusId     String        @map("status_id")
+  itemCode     String        @unique @map("item_code")
+  barcode      String?       @unique
+  condition    ItemCondition @default(GOOD)
+  purchaseDate DateTime?     @map("purchase_date")
+  note         String?
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  product         Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  size            Size?                 @relation(fields: [sizeId], references: [id], onDelete: SetNull)
+  status          ItemStatus            @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  statusHistories ItemStatusHistory[]
+  allocationItems AllocationOrderItem[]
+
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([sizeId])
+  @@index([statusId])
+  @@index([warehouseId, statusId])
+  @@index([productId, sizeId, statusId])
+  @@map("items")
+}
+
+model ItemStatusHistory {
+  id              String         @id @default(cuid())
+  itemId          String         @map("item_id")
+  fromStatusId    String?        @map("from_status_id")
+  toStatusId      String         @map("to_status_id")
+  changedByUserId String         @map("changed_by_user_id")
+  reason          String?
+  referenceType   ReferenceType? @map("reference_type")
+  referenceId     String?        @map("reference_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  item          Item        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  fromStatus    ItemStatus? @relation("ItemStatusHistoryFrom", fields: [fromStatusId], references: [id], onDelete: SetNull)
+  toStatus      ItemStatus  @relation("ItemStatusHistoryTo", fields: [toStatusId], references: [id], onDelete: Restrict)
+  changedByUser User        @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([itemId, createdAt])
+  @@index([toStatusId])
+  @@index([changedByUserId])
+  @@map("item_status_histories")
+}
+
+model RentalGroup {
+  id              String            @id @default(cuid())
+  branchId        String            @map("branch_id")
+  warehouseId     String            @map("warehouse_id")
+  groupCode       String?           @unique @map("group_code")
+  groupName       String            @map("group_name")
+  schoolName      String?           @map("school_name")
+  shootDate       DateTime?         @map("shoot_date")
+  status          RentalGroupStatus @default(DRAFT)
+  note            String?
+  createdByUserId String            @map("created_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  branch           Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdByUser    User              @relation("RentalGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  importBatches    ImportBatch[]
+  renters          Renter[]
+  allocationOrders AllocationOrder[]
+
+  @@index([branchId, warehouseId])
+  @@index([status])
+  @@index([groupName])
+  @@map("rental_groups")
+}
+
+model ImportBatch {
+  id               String            @id @default(cuid())
+  rentalGroupId    String            @map("rental_group_id")
+  uploadedByUserId String            @map("uploaded_by_user_id")
+  fileName         String            @map("file_name")
+  fileUrl          String?           @map("file_url")
+  totalRows        Int               @default(0) @map("total_rows")
+  successRows      Int               @default(0) @map("success_rows")
+  errorRows        Int               @default(0) @map("error_rows")
+  status           ImportBatchStatus @default(PROCESSING)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  finishedAt       DateTime?         @map("finished_at")
+
+  rentalGroup    RentalGroup        @relation(fields: [rentalGroupId], references: [id], onDelete: Cascade)
+  uploadedByUser User               @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  errors         ImportBatchError[]
+  renters        Renter[]
+
+  @@index([rentalGroupId])
+  @@index([uploadedByUserId])
+  @@index([status])
+  @@map("import_batches")
+}
+
+model ImportBatchError {
+  id            String   @id @default(cuid())
+  importBatchId String   @map("import_batch_id")
+  rowNumber     Int      @map("row_number")
+  fieldName     String?  @map("field_name")
+  errorMessage  String   @map("error_message")
+  rawValue      String?  @map("raw_value")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  importBatch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+
+  @@index([importBatchId, rowNumber])
+  @@map("import_batch_errors")
+}
+
+model Renter {
+  id              String   @id @default(cuid())
+  rentalGroupId   String   @map("rental_group_id")
+  importBatchId   String?  @map("import_batch_id")
+  rowNo           Int?     @map("row_no")
+  studentCode     String?  @map("student_code")
+  fullName        String   @map("full_name")
+  gender          Gender?
+  heightCm        Int      @map("height_cm")
+  weightKg        Decimal  @map("weight_kg") @db.Decimal(5, 2)
+  suggestedSizeId String?  @map("suggested_size_id")
+  confirmedSizeId String?  @map("confirmed_size_id")
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  rentalGroup     RentalGroup           @relation(fields: [rentalGroupId], references: [id], onDelete: Cascade)
+  importBatch     ImportBatch?          @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  suggestedSize   Size?                 @relation("RenterSuggestedSize", fields: [suggestedSizeId], references: [id], onDelete: SetNull)
+  confirmedSize   Size?                 @relation("RenterConfirmedSize", fields: [confirmedSizeId], references: [id], onDelete: SetNull)
+  allocationItems AllocationOrderItem[]
+
+  @@unique([rentalGroupId, rowNo])
+  @@index([rentalGroupId, fullName])
+  @@index([suggestedSizeId])
+  @@index([confirmedSizeId])
+  @@map("renters")
+}
+
+model SizeRuleSet {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rules SizeRule[]
+
+  @@index([isDefault, isActive])
+  @@map("size_rule_sets")
+}
+
+model SizeRule {
+  id                String   @id @default(cuid())
+  ruleSetId         String   @map("rule_set_id")
+  gender            Gender?
+  productCategoryId String?  @map("product_category_id")
+  minHeightCm       Int      @map("min_height_cm")
+  maxHeightCm       Int      @map("max_height_cm")
+  minWeightKg       Decimal  @map("min_weight_kg") @db.Decimal(5, 2)
+  maxWeightKg       Decimal  @map("max_weight_kg") @db.Decimal(5, 2)
+  sizeId            String   @map("size_id")
+  priority          Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  ruleSet         SizeRuleSet      @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
+  size            Size             @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  @@index([ruleSetId, priority])
+  @@index([productCategoryId])
+  @@index([sizeId])
+  @@map("size_rules")
+}
+
+model AllocationOrder {
+  id                String                @id @default(cuid())
+  rentalGroupId     String                @map("rental_group_id")
+  warehouseId       String                @map("warehouse_id")
+  allocatedByUserId String                @map("allocated_by_user_id")
+  status            AllocationOrderStatus @default(DRAFT)
+  note              String?
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  rentalGroup     RentalGroup           @relation(fields: [rentalGroupId], references: [id], onDelete: Cascade)
+  warehouse       Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  allocatedByUser User                  @relation(fields: [allocatedByUserId], references: [id], onDelete: Restrict)
+  items           AllocationOrderItem[]
+
+  @@index([rentalGroupId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("allocation_orders")
+}
+
+model AllocationOrderItem {
+  id                String               @id @default(cuid())
+  allocationOrderId String               @map("allocation_order_id")
+  renterId          String               @map("renter_id")
+  itemId            String               @map("item_id")
+  assignedSizeId    String?              @map("assigned_size_id")
+  returnedAt        DateTime?            @map("returned_at")
+  returnNote        String?              @map("return_note")
+  status            AllocationItemStatus @default(ASSIGNED)
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  allocationOrder AllocationOrder @relation(fields: [allocationOrderId], references: [id], onDelete: Cascade)
+  renter          Renter          @relation(fields: [renterId], references: [id], onDelete: Restrict)
+  item            Item            @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  assignedSize    Size?           @relation(fields: [assignedSizeId], references: [id], onDelete: SetNull)
+
+  @@index([allocationOrderId])
+  @@index([renterId])
+  @@index([itemId])
+  @@index([status])
+  @@map("allocation_order_items")
+}
+
+model StockAlertRule {
+  id           String   @id @default(cuid())
+  warehouseId  String?  @map("warehouse_id")
+  productId    String?  @map("product_id")
+  sizeId       String?  @map("size_id")
+  minGreenQty  Int      @default(0) @map("min_green_qty")
+  minYellowQty Int      @default(0) @map("min_yellow_qty")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  product   Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  size      Size?      @relation(fields: [sizeId], references: [id], onDelete: SetNull)
+
+  @@index([warehouseId, productId, sizeId])
+  @@index([isActive])
+  @@map("stock_alert_rules")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  oldData    Json?    @map("old_data")
+  newData    Json?    @map("new_data")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@map("audit_logs")
+}
