@@ -71,7 +71,6 @@ export const createRenterSchema = z
     ),
     heightCm: positiveIntField("Chiều cao", 50, 250),
     weightKg: decimalWeightField,
-    suggestedSizeId: optionalId,
     confirmedSizeId: optionalId,
     note: optionalText(1000),
   })
@@ -88,11 +87,15 @@ export const updateRenterSchema = z
       emptyToUndefined,
       z.string().trim().max(100, "Mã học sinh quá dài").optional()
     ),
-    fullName: z
-      .preprocess(
-        emptyToUndefined,
-        z.string().trim().min(1, "Họ tên không được để trống").max(255, "Họ tên quá dài").optional()
-      ),
+    fullName: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .trim()
+        .min(1, "Họ tên không được để trống")
+        .max(255, "Họ tên quá dài")
+        .optional()
+    ),
     gender: z.preprocess(
       emptyToUndefined,
       z.nativeEnum(Gender).optional()
@@ -105,7 +108,6 @@ export const updateRenterSchema = z
       (value) => (value === "" || value == null ? undefined : value),
       decimalWeightField.optional()
     ),
-    suggestedSizeId: optionalId,
     confirmedSizeId: optionalId,
     note: optionalText(1000),
   })
@@ -115,22 +117,21 @@ export const updateRenterSchema = z
     studentCode: data.studentCode ? normalizeText(data.studentCode) : data.studentCode,
   }));
 
-export const renterQuerySchema = z
-  .object({
-    q: z.preprocess(
-      emptyToUndefined,
-      z.string().trim().max(100).optional()
-    ),
-    rentalGroupId: optionalId,
-    gender: z.preprocess(
-      emptyToUndefined,
-      z.nativeEnum(Gender).optional()
-    ),
-    suggestedSizeId: optionalId,
-    confirmedSizeId: optionalId,
-    page: z.coerce.number().int().min(1).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  });
+export const renterQuerySchema = z.object({
+  q: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().max(100).optional()
+  ),
+  rentalGroupId: optionalId,
+  gender: z.preprocess(
+    emptyToUndefined,
+    z.nativeEnum(Gender).optional()
+  ),
+  suggestedSizeId: optionalId,
+  confirmedSizeId: optionalId,
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 export type CreateRenterInput = z.infer<typeof createRenterSchema>;
 export type UpdateRenterInput = z.infer<typeof updateRenterSchema>;

@@ -20,6 +20,13 @@ type SizeOption = {
   sortOrder: number;
 };
 
+type SizeValue = {
+  id: string;
+  code: string;
+  name: string;
+  sortOrder: number;
+};
+
 type RenterRow = {
   id: string;
   studentCode: string | null;
@@ -36,18 +43,8 @@ type RenterRow = {
     schoolName: string | null;
     status: string;
   };
-  suggestedSize: {
-    id: string;
-    code: string;
-    name: string;
-    sortOrder: number;
-  } | null;
-  confirmedSize: {
-    id: string;
-    code: string;
-    name: string;
-    sortOrder: number;
-  } | null;
+  suggestedSize: SizeValue | null;
+  confirmedSize: SizeValue | null;
   importBatch: {
     id: string;
     fileName: string;
@@ -56,6 +53,24 @@ type RenterRow = {
   _count: {
     allocationItems: number;
   };
+  sizeAssignments?: {
+    id: string;
+    rentalGroupProductId: string;
+    product: {
+      id: string;
+      code: string;
+      name: string;
+      gender: string | null;
+    };
+    suggestedSize: SizeValue | null;
+    confirmedSize: SizeValue | null;
+    matchedRule: {
+      id: string;
+      priority: number;
+      sizeId?: string | null;
+    } | null;
+    note: string | null;
+  }[];
 };
 
 type RentersTableProps = {
@@ -82,6 +97,11 @@ function weightLabel(value: RenterRow["weightKg"]) {
   return value.toString();
 }
 
+function sizeLabel(size?: SizeValue | null) {
+  if (!size) return "-";
+  return `${size.code} - ${size.name}`;
+}
+
 export default function RentersTable({
   initialRenters,
   rentalGroups,
@@ -94,6 +114,19 @@ export default function RentersTable({
   const [gender, setGender] = useState("");
   const [suggestedSizeId, setSuggestedSizeId] = useState("");
   const [confirmedSizeId, setConfirmedSizeId] = useState("");
+
+  const sortedRentalGroups = useMemo(() => {
+    return [...rentalGroups].sort((a, b) =>
+      a.groupName.localeCompare(b.groupName, "vi")
+    );
+  }, [rentalGroups]);
+
+  const sortedSizes = useMemo(() => {
+    return [...sizes].sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return a.name.localeCompare(b.name, "vi");
+    });
+  }, [sizes]);
 
   const filteredRows = useMemo(() => {
     const keyword = q.trim().toLowerCase();
@@ -114,10 +147,18 @@ export default function RentersTable({
       const matchGender = !gender || row.gender === gender;
 
       const matchSuggestedSize =
-        !suggestedSizeId || row.suggestedSize?.id === suggestedSizeId;
+        !suggestedSizeId ||
+        row.suggestedSize?.id === suggestedSizeId ||
+        row.sizeAssignments?.some(
+          (assignment) => assignment.suggestedSize?.id === suggestedSizeId
+        );
 
       const matchConfirmedSize =
-        !confirmedSizeId || row.confirmedSize?.id === confirmedSizeId;
+        !confirmedSizeId ||
+        row.confirmedSize?.id === confirmedSizeId ||
+        row.sizeAssignments?.some(
+          (assignment) => assignment.confirmedSize?.id === confirmedSizeId
+        );
 
       return (
         matchKeyword &&
@@ -130,227 +171,312 @@ export default function RentersTable({
   }, [rows, q, rentalGroupId, gender, suggestedSizeId, confirmedSizeId]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-xl font-semibold text-slate-900">
             Danh sách người mặc
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Quản lý thông tin người mặc, nhóm thuê và size gợi ý/size chốt.
+          </h2>
+          <p className="text-sm leading-6 text-slate-600">
+            Quản lý thông tin người mặc, nhóm thuê, size gợi ý và trạng thái xác
+            nhận size theo từng sản phẩm.
           </p>
         </div>
 
-        <Link
-          href="/admin/renters/new"
-          className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          + Thêm người mặc
-        </Link>
-      </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Tìm theo tên, mã HS, nhóm, trường..."
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-400 xl:col-span-2"
+          />
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Tìm theo tên, mã HS, nhóm thuê..."
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-        />
+          <select
+            value={rentalGroupId}
+            onChange={(e) => setRentalGroupId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-400"
+          >
+            <option value="">Tất cả nhóm thuê</option>
+            {sortedRentalGroups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.groupName}
+                {group.groupCode ? ` (${group.groupCode})` : ""}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={rentalGroupId}
-          onChange={(e) => setRentalGroupId(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-        >
-          <option value="">Tất cả nhóm thuê</option>
-          {rentalGroups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.groupName}
-            </option>
-          ))}
-        </select>
+          <select
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-400"
+          >
+            <option value="">Tất cả giới tính</option>
+            {genderOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={gender}
-          onChange={(e) => setGender(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-        >
-          <option value="">Tất cả giới tính</option>
-          {genderOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <select
+            value={suggestedSizeId}
+            onChange={(e) => setSuggestedSizeId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-400"
+          >
+            <option value="">Tất cả size gợi ý</option>
+            {sortedSizes.map((size) => (
+              <option key={size.id} value={size.id}>
+                {size.code} - {size.name}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={suggestedSizeId}
-          onChange={(e) => setSuggestedSizeId(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-        >
-          <option value="">Tất cả size gợi ý</option>
-          {sizes.map((size) => (
-            <option key={size.id} value={size.id}>
-              {size.code} - {size.name}
-            </option>
-          ))}
-        </select>
+          <select
+            value={confirmedSizeId}
+            onChange={(e) => setConfirmedSizeId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-400"
+          >
+            <option value="">Tất cả size chốt</option>
+            {sortedSizes.map((size) => (
+              <option key={size.id} value={size.id}>
+                {size.code} - {size.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={confirmedSizeId}
-          onChange={(e) => setConfirmedSizeId(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
-        >
-          <option value="">Tất cả size chốt</option>
-          {sizes.map((size) => (
-            <option key={size.id} value={size.id}>
-              {size.code} - {size.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          onClick={() => {
-            setQ("");
-            setRentalGroupId("");
-            setGender("");
-            setSuggestedSizeId("");
-            setConfirmedSizeId("");
-          }}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Xóa bộ lọc
-        </button>
-
-        <div className="ml-auto text-sm text-slate-500">
-          Tổng:{" "}
-          <span className="font-medium text-slate-900">{filteredRows.length}</span>{" "}
-          người mặc
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+          <span>
+            Tổng: <strong>{filteredRows.length}</strong> người mặc
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setQ("");
+              setRentalGroupId("");
+              setGender("");
+              setSuggestedSizeId("");
+              setConfirmedSizeId("");
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+          >
+            Xóa bộ lọc
+          </button>
         </div>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr className="text-left text-sm text-slate-600">
-              <th className="px-4 py-3 font-medium">Người mặc</th>
-              <th className="px-4 py-3 font-medium">Nhóm thuê</th>
-              <th className="px-4 py-3 font-medium">Thông số</th>
-              <th className="px-4 py-3 font-medium">Size</th>
-              <th className="px-4 py-3 font-medium">Nguồn dữ liệu</th>
-              <th className="px-4 py-3 font-medium">Cấp phát</th>
-              <th className="px-4 py-3 font-medium text-right">Thao tác</th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                  Không có người mặc phù hợp với bộ lọc hiện tại.
-                </td>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse text-sm">
+            <thead className="bg-slate-50 text-left">
+              <tr className="border-b border-slate-200">
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Người mặc
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Nhóm thuê
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Thông số
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Xác nhận size
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Nguồn dữ liệu
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Cấp phát
+                </th>
+                <th className="px-4 py-3 font-medium text-slate-700">
+                  Thao tác
+                </th>
               </tr>
-            ) : (
-              filteredRows.map((row) => (
-                <tr key={row.id} className="text-sm text-slate-700">
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-medium text-slate-900">{row.fullName}</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Mã HS: {row.studentCode || "-"}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Giới tính: {genderLabel(row.gender)}
-                    </div>
-                    {row.note ? (
-                      <div className="mt-2 line-clamp-2 max-w-xs text-xs text-slate-500">
-                        Ghi chú: {row.note}
-                      </div>
-                    ) : null}
-                  </td>
+            </thead>
 
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-medium text-slate-900">
-                      {row.rentalGroup.groupName}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Trường: {row.rentalGroup.schoolName || "-"}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Mã nhóm: {row.rentalGroup.groupCode || "-"}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-slate-900">
-                      Cao: <span className="font-medium">{row.heightCm} cm</span>
-                    </div>
-                    <div className="mt-1 text-slate-900">
-                      Nặng: <span className="font-medium">{weightLabel(row.weightKg)} kg</span>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-slate-900">
-                      Gợi ý:{" "}
-                      <span className="font-medium">
-                        {row.suggestedSize
-                          ? `${row.suggestedSize.code} - ${row.suggestedSize.name}`
-                          : "-"}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-slate-900">
-                      Chốt:{" "}
-                      <span className="font-medium">
-                        {row.confirmedSize
-                          ? `${row.confirmedSize.code} - ${row.confirmedSize.name}`
-                          : "-"}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    {row.importBatch ? (
-                      <>
-                        <div className="font-medium text-slate-900">Import Excel</div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          File: {row.importBatch.fileName}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          Trạng thái: {row.importBatch.status}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-slate-500">Nhập thủ công</div>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-slate-900">
-                      Phiếu cấp phát:{" "}
-                      <span className="font-medium">
-                        {row._count.allocationItems}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 align-top text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link
-                        href={`/admin/renters/${row.id}/edit`}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Sửa
-                      </Link>
-                    </div>
+            <tbody>
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-10 text-center text-sm text-slate-500"
+                  >
+                    Không có người mặc phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredRows.map((row) => {
+                  const assignments = row.sizeAssignments ?? [];
+                  const confirmedCount = assignments.filter(
+                    (item) => item.confirmedSize
+                  ).length;
+                  const totalAssignments = assignments.length;
+                  const allConfirmed =
+                    totalAssignments > 0 && confirmedCount === totalAssignments;
+
+                  return (
+                    <tr
+                      key={row.id}
+                      className="border-b border-slate-100 align-top last:border-b-0"
+                    >
+                      <td className="px-4 py-4">
+                        <div className="space-y-1">
+                          <div className="font-semibold text-slate-900">
+                            {row.fullName}
+                          </div>
+                          <div className="text-slate-500">
+                            Mã HS: {row.studentCode || "-"}
+                          </div>
+                          <div className="text-slate-500">
+                            Giới tính: {genderLabel(row.gender)}
+                          </div>
+                          {row.note ? (
+                            <div className="text-slate-500">
+                              Ghi chú: {row.note}
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="space-y-1">
+                          <div className="font-medium text-slate-900">
+                            {row.rentalGroup.groupName}
+                          </div>
+                          <div className="text-slate-500">
+                            Trường: {row.rentalGroup.schoolName || "-"}
+                          </div>
+                          <div className="text-slate-500">
+                            Mã nhóm: {row.rentalGroup.groupCode || "-"}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="space-y-1 text-slate-700">
+                          <div>Cao: {row.heightCm} cm</div>
+                          <div>Nặng: {weightLabel(row.weightKg)} kg</div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                                allConfirmed
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : confirmedCount > 0
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {allConfirmed
+                                ? "Đã chốt đầy đủ"
+                                : confirmedCount > 0
+                                ? `Đã chốt ${confirmedCount}/${totalAssignments}`
+                                : "Chưa chốt size"}
+                            </span>
+
+                            {row.suggestedSize ? (
+                              <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">
+                                Gợi ý chung: {row.suggestedSize.code}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {assignments.length ? (
+                            <div className="space-y-2">
+                              {assignments.map((assignment) => (
+                                <div
+                                  key={assignment.id}
+                                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
+                                >
+                                  <div className="mb-1 text-sm font-medium text-slate-900">
+                                    {assignment.product.name}
+                                    {assignment.product.code
+                                      ? ` (${assignment.product.code})`
+                                      : ""}
+                                  </div>
+
+                                  <div className="grid gap-1 text-xs text-slate-600">
+                                    <div>
+                                      Gợi ý: {sizeLabel(assignment.suggestedSize)}
+                                    </div>
+                                    <div>
+                                      Chốt:{" "}
+                                      <span
+                                        className={
+                                          assignment.confirmedSize
+                                            ? "font-medium text-emerald-700"
+                                            : "text-slate-500"
+                                        }
+                                      >
+                                        {sizeLabel(assignment.confirmedSize)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      Rule match:{" "}
+                                      {assignment.matchedRule
+                                        ? `Priority ${assignment.matchedRule.priority}`
+                                        : "-"}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-slate-500">
+                              Chưa có assignment size.
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {row.importBatch ? (
+                          <div className="space-y-1 text-slate-700">
+                            <div className="font-medium text-slate-900">
+                              Import Excel
+                            </div>
+                            <div>File: {row.importBatch.fileName}</div>
+                            <div>Trạng thái: {row.importBatch.status}</div>
+                          </div>
+                        ) : (
+                          <div className="text-slate-500">Nhập thủ công</div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="text-slate-700">
+                          Phiếu cấp phát: {row._count.allocationItems}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col gap-2">
+                          <Link
+                            href={`/admin/renters/${row.id}/edit`}
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Sửa
+                          </Link>
+
+                          <Link
+                            href={`/admin/renters/${row.id}`}
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Chi tiết
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

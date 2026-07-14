@@ -145,17 +145,16 @@ model UserWarehouse {
 }
 
 model ProductCategory {
-  id          String    @id @default(cuid())
-  code        String    @unique
+  id          String   @id @default(cuid())
+  code        String   @unique
   name        String
   description String?
-  hasSize     Boolean   @default(true) @map("hassize")
-  isActive    Boolean   @default(true) @map("isactive")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  hasSize     Boolean  @default(true) @map("hassize")
+  isActive    Boolean  @default(true) @map("isactive")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  products    Product[]
-  sizeRules   SizeRule[]
+  products Product[]
 
   @@map("productcategories")
 }
@@ -169,13 +168,13 @@ model Size {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  productSizes     ProductSize[]
-  items            Item[]
-  rentersSuggested Renter[]              @relation("RenterSuggestedSize")
-  rentersConfirmed Renter[]              @relation("RenterConfirmedSize")
-  sizeRules        SizeRule[]
-  allocationItems  AllocationOrderItem[]
-  stockAlertRules  StockAlertRule[]
+  productSizes           ProductSize[]
+  items                  Item[]
+  sizeRules              SizeRule[]
+  allocationItems        AllocationOrderItem[]
+  stockAlertRules        StockAlertRule[]
+  renterProductSuggested RenterProductSize[]   @relation("RenterProductSuggestedSize")
+  renterProductConfirmed RenterProductSize[]   @relation("RenterProductConfirmedSize")
 
   @@index([sortOrder])
   @@map("sizes")
@@ -194,10 +193,12 @@ model Product {
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
-  category    ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  productSizes ProductSize[]
-  items       Item[]
-  stockAlertRules StockAlertRule[]
+  category            ProductCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  productSizes        ProductSize[]
+  items               Item[]
+  stockAlertRules     StockAlertRule[]
+  rentalGroupProducts RentalGroupProduct[]
+  sizeRules           SizeRule[]
 
   @@index([categoryId, name])
   @@map("products")
@@ -301,17 +302,39 @@ model RentalGroup {
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
-  branch           Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  warehouse        Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  createdByUser    User              @relation("RentalGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  importBatches    ImportBatch[]
-  renters          Renter[]
-  allocationOrders AllocationOrder[]
+  branch              Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse           Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdByUser       User                 @relation("RentalGroupCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  importBatches       ImportBatch[]
+  renters             Renter[]
+  allocationOrders    AllocationOrder[]
+  rentalGroupProducts RentalGroupProduct[]
 
   @@index([branchId, warehouseId])
   @@index([status])
   @@index([groupName])
   @@map("rental_groups")
+}
+
+model RentalGroupProduct {
+  id            String   @id @default(cuid())
+  rentalGroupId String   @map("rental_group_id")
+  productId     String   @map("product_id")
+  quantityPlan  Int?     @map("quantity_plan")
+  note          String?
+  sortOrder     Int      @default(0) @map("sort_order")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  rentalGroup RentalGroup         @relation(fields: [rentalGroupId], references: [id], onDelete: Cascade)
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  renterSizes RenterProductSize[]
+
+  @@unique([rentalGroupId, productId])
+  @@index([productId])
+  @@index([rentalGroupId, sortOrder])
+  @@map("rental_group_products")
 }
 
 model ImportBatch {
@@ -354,32 +377,52 @@ model ImportBatchError {
 }
 
 model Renter {
-  id              String   @id @default(cuid())
-  rentalGroupId   String   @map("rental_group_id")
-  importBatchId   String?  @map("import_batch_id")
-  rowNo           Int?     @map("row_no")
-  studentCode     String?  @map("student_code")
-  fullName        String   @map("full_name")
-  gender          Gender?
-  heightCm        Int      @map("height_cm")
-  weightKg        Decimal  @map("weight_kg") @db.Decimal(5, 2)
-  suggestedSizeId String?  @map("suggested_size_id")
-  confirmedSizeId String?  @map("confirmed_size_id")
-  note            String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  rentalGroupId String   @map("rental_group_id")
+  importBatchId String?  @map("import_batch_id")
+  rowNo         Int?     @map("row_no")
+  studentCode   String?  @map("student_code")
+  fullName      String   @map("full_name")
+  gender        Gender?
+  heightCm      Int      @map("height_cm")
+  weightKg      Decimal  @map("weight_kg") @db.Decimal(5, 2)
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   rentalGroup     RentalGroup           @relation(fields: [rentalGroupId], references: [id], onDelete: Cascade)
   importBatch     ImportBatch?          @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  suggestedSize   Size?                 @relation("RenterSuggestedSize", fields: [suggestedSizeId], references: [id], onDelete: SetNull)
-  confirmedSize   Size?                 @relation("RenterConfirmedSize", fields: [confirmedSizeId], references: [id], onDelete: SetNull)
   allocationItems AllocationOrderItem[]
+  productSizes    RenterProductSize[]
 
   @@unique([rentalGroupId, rowNo])
   @@index([rentalGroupId, fullName])
+  @@map("renters")
+}
+
+model RenterProductSize {
+  id                   String   @id @default(cuid())
+  renterId             String   @map("renter_id")
+  rentalGroupProductId String   @map("rental_group_product_id")
+  suggestedSizeId      String?  @map("suggested_size_id")
+  confirmedSizeId      String?  @map("confirmed_size_id")
+  matchedRuleId        String?  @map("matched_rule_id")
+  note                 String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  renter             Renter             @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  rentalGroupProduct RentalGroupProduct @relation(fields: [rentalGroupProductId], references: [id], onDelete: Cascade)
+  suggestedSize      Size?              @relation("RenterProductSuggestedSize", fields: [suggestedSizeId], references: [id], onDelete: SetNull)
+  confirmedSize      Size?              @relation("RenterProductConfirmedSize", fields: [confirmedSizeId], references: [id], onDelete: SetNull)
+  matchedRule        SizeRule?          @relation("SizeRuleMatchedResults", fields: [matchedRuleId], references: [id], onDelete: SetNull)
+
+  @@unique([renterId, rentalGroupProductId])
+  @@index([rentalGroupProductId])
   @@index([suggestedSizeId])
   @@index([confirmedSizeId])
-  @@map("renters")
+  @@index([matchedRuleId])
+  @@map("renter_product_sizes")
 }
 
 model SizeRuleSet {
@@ -398,26 +441,30 @@ model SizeRuleSet {
 }
 
 model SizeRule {
-  id                String   @id @default(cuid())
-  ruleSetId         String   @map("rule_set_id")
-  gender            Gender?
-  productCategoryId String?  @map("product_category_id")
-  minHeightCm       Int      @map("min_height_cm")
-  maxHeightCm       Int      @map("max_height_cm")
-  minWeightKg       Decimal  @map("min_weight_kg") @db.Decimal(5, 2)
-  maxWeightKg       Decimal  @map("max_weight_kg") @db.Decimal(5, 2)
-  sizeId            String   @map("size_id")
-  priority          Int      @default(0)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(cuid())
+  ruleSetId   String   @map("rule_set_id")
+  gender      Gender?
+  productId   String   @map("product_id")
+  minHeightCm Int?     @map("min_height_cm")
+  maxHeightCm Int?     @map("max_height_cm")
+  minWeightKg Decimal? @map("min_weight_kg") @db.Decimal(5, 2)
+  maxWeightKg Decimal? @map("max_weight_kg") @db.Decimal(5, 2)
+  sizeId      String   @map("size_id")
+  priority    Int      @default(0)
+  isActive    Boolean  @default(true) @map("is_active")
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  ruleSet         SizeRuleSet      @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
-  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id], onDelete: SetNull)
-  size            Size             @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  ruleSet        SizeRuleSet         @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+  product        Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  size           Size                @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  matchedResults RenterProductSize[] @relation("SizeRuleMatchedResults")
 
-  @@index([ruleSetId, priority])
-  @@index([productCategoryId])
+  @@index([ruleSetId, productId, priority])
+  @@index([productId, gender])
   @@index([sizeId])
+  @@index([isActive])
   @@map("size_rules")
 }
 

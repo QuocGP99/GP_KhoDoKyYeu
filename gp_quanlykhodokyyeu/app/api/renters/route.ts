@@ -5,13 +5,17 @@ import {
   createRenterSchema,
   renterQuerySchema,
 } from "@/lib/renter-schemas";
+import { suggestSizesForRenter } from "@/lib/size-rule-engine";
+
+function normalizeWeightForPrisma(value: number) {
+  return new Prisma.Decimal(value.toFixed(2));
+}
 
 async function validateRenterRelations(input: {
   rentalGroupId: string;
-  suggestedSizeId?: string | null;
   confirmedSizeId?: string | null;
 }) {
-  const [rentalGroup, suggestedSize, confirmedSize] = await Promise.all([
+  const [rentalGroup, confirmedSize] = await Promise.all([
     prisma.rentalGroup.findUnique({
       where: { id: input.rentalGroupId },
       select: {
@@ -19,17 +23,6 @@ async function validateRenterRelations(input: {
         groupName: true,
       },
     }),
-    input.suggestedSizeId
-      ? prisma.size.findUnique({
-          where: { id: input.suggestedSizeId },
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            isActive: true,
-          },
-        })
-      : Promise.resolve(null),
     input.confirmedSizeId
       ? prisma.size.findUnique({
           where: { id: input.confirmedSizeId },
@@ -47,23 +40,73 @@ async function validateRenterRelations(input: {
     return { error: "Nhóm thuê không tồn tại" as const };
   }
 
-  if (input.suggestedSizeId && (!suggestedSize || !suggestedSize.isActive)) {
-    return { error: "Size gợi ý không tồn tại hoặc đã ngưng hoạt động" as const };
-  }
-
   if (input.confirmedSizeId && (!confirmedSize || !confirmedSize.isActive)) {
     return { error: "Size chốt không tồn tại hoặc đã ngưng hoạt động" as const };
   }
 
   return {
     rentalGroup,
-    suggestedSize,
     confirmedSize,
   };
 }
 
-function normalizeWeightForPrisma(value: number) {
-  return new Prisma.Decimal(value.toFixed(2));
+function mapRenterResponse<
+  T extends {
+    weightKg: { toString(): string } | string | number;
+    productSizes: Array<{
+      id: string;
+      rentalGroupProductId: string;
+      rentalGroupProduct: {
+        product: {
+          id: string;
+          code: string;
+          name: string;
+          gender: unknown;
+        };
+      };
+      suggestedSize: {
+        id: string;
+        code: string;
+        name: string;
+        sortOrder: number;
+      } | null;
+      confirmedSize: {
+        id: string;
+        code: string;
+        name: string;
+        sortOrder: number;
+      } | null;
+      matchedRule: {
+        id: string;
+        priority: number;
+        sizeId?: string | null;
+      } | null;
+      note?: string | null;
+    }>;
+  }
+>(renter: T) {
+  const firstProductSize = renter.productSizes[0] ?? null;
+
+  return {
+    ...renter,
+    weightKg:
+      typeof renter.weightKg === "object" &&
+      renter.weightKg !== null &&
+      "toString" in renter.weightKg
+        ? renter.weightKg.toString()
+        : String(renter.weightKg),
+    suggestedSize: firstProductSize?.suggestedSize ?? null,
+    confirmedSize: firstProductSize?.confirmedSize ?? null,
+    sizeAssignments: renter.productSizes.map((productSize) => ({
+      id: productSize.id,
+      rentalGroupProductId: productSize.rentalGroupProductId,
+      product: productSize.rentalGroupProduct.product,
+      suggestedSize: productSize.suggestedSize,
+      confirmedSize: productSize.confirmedSize,
+      matchedRule: productSize.matchedRule,
+      note: productSize.note ?? null,
+    })),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -103,8 +146,24 @@ export async function GET(req: NextRequest) {
     const where: Prisma.RenterWhereInput = {
       ...(rentalGroupId ? { rentalGroupId } : {}),
       ...(gender ? { gender } : {}),
-      ...(suggestedSizeId ? { suggestedSizeId } : {}),
-      ...(confirmedSizeId ? { confirmedSizeId } : {}),
+      ...(suggestedSizeId
+        ? {
+            productSizes: {
+              some: {
+                suggestedSizeId,
+              },
+            },
+          }
+        : {}),
+      ...(confirmedSizeId
+        ? {
+            productSizes: {
+              some: {
+                confirmedSizeId,
+              },
+            },
+          }
+        : {}),
       ...(q
         ? {
             OR: [
@@ -120,7 +179,7 @@ export async function GET(req: NextRequest) {
         : {}),
     };
 
-    const [renters, total] = await Promise.all([
+    const [rentersRaw, total] = await Promise.all([
       prisma.renter.findMany({
         where,
         include: {
@@ -133,20 +192,48 @@ export async function GET(req: NextRequest) {
               status: true,
             },
           },
-          suggestedSize: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              sortOrder: true,
+          productSizes: {
+            include: {
+              rentalGroupProduct: {
+                include: {
+                  product: {
+                    select: {
+                      id: true,
+                      code: true,
+                      name: true,
+                      gender: true,
+                    },
+                  },
+                },
+              },
+              suggestedSize: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  sortOrder: true,
+                },
+              },
+              confirmedSize: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  sortOrder: true,
+                },
+              },
+              matchedRule: {
+                select: {
+                  id: true,
+                  priority: true,
+                  sizeId: true,
+                },
+              },
             },
-          },
-          confirmedSize: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              sortOrder: true,
+            orderBy: {
+              rentalGroupProduct: {
+                sortOrder: "asc",
+              },
             },
           },
           importBatch: {
@@ -169,6 +256,8 @@ export async function GET(req: NextRequest) {
       prisma.renter.count({ where }),
     ]);
 
+    const renters = rentersRaw.map(mapRenterResponse);
+
     return NextResponse.json({
       renters,
       pagination: {
@@ -190,7 +279,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-
     const parsed = createRenterSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -207,13 +295,25 @@ export async function POST(req: NextRequest) {
 
     const validated = await validateRenterRelations({
       rentalGroupId: data.rentalGroupId,
-      suggestedSizeId: data.suggestedSizeId ?? null,
       confirmedSizeId: data.confirmedSizeId ?? null,
     });
 
     if ("error" in validated) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
+
+    const rentalGroupProducts = await prisma.rentalGroupProduct.findMany({
+      where: {
+        rentalGroupId: data.rentalGroupId,
+        isActive: true,
+      },
+      orderBy: {
+        sortOrder: "asc",
+      },
+      select: {
+        id: true,
+      },
+    });
 
     const renter = await prisma.renter.create({
       data: {
@@ -223,9 +323,15 @@ export async function POST(req: NextRequest) {
         gender: data.gender ?? null,
         heightCm: data.heightCm,
         weightKg: normalizeWeightForPrisma(data.weightKg),
-        suggestedSizeId: data.suggestedSizeId ?? null,
-        confirmedSizeId: data.confirmedSizeId ?? null,
         note: data.note ?? null,
+        productSizes: rentalGroupProducts.length
+          ? {
+              create: rentalGroupProducts.map((item, index) => ({
+                rentalGroupProductId: item.id,
+                confirmedSizeId: index === 0 ? data.confirmedSizeId ?? null : null,
+              })),
+            }
+          : undefined,
       },
       include: {
         rentalGroup: {
@@ -237,26 +343,59 @@ export async function POST(req: NextRequest) {
             status: true,
           },
         },
-        suggestedSize: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            sortOrder: true,
+        productSizes: {
+          include: {
+            rentalGroupProduct: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    gender: true,
+                  },
+                },
+              },
+            },
+            suggestedSize: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                sortOrder: true,
+              },
+            },
+            confirmedSize: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                sortOrder: true,
+              },
+            },
+            matchedRule: {
+              select: {
+                id: true,
+                priority: true,
+                sizeId: true,
+              },
+            },
           },
-        },
-        confirmedSize: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            sortOrder: true,
+          orderBy: {
+            rentalGroupProduct: {
+              sortOrder: "asc",
+            },
           },
         },
       },
     });
 
-    return NextResponse.json(renter, { status: 201 });
+    const refreshed = await suggestSizesForRenter({ renterId: renter.id });
+
+    return NextResponse.json(
+      mapRenterResponse(refreshed ?? renter),
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /api/renters error:", error);
 

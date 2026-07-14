@@ -5,9 +5,7 @@ import RenterForm from "../../renter-form";
 export const dynamic = "force-dynamic";
 
 type EditRenterPageProps = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
 export default async function EditRenterPage({
@@ -15,20 +13,47 @@ export default async function EditRenterPage({
 }: EditRenterPageProps) {
   const { id } = await params;
 
-  const [renter, rentalGroups, sizes] = await Promise.all([
+  const [renterRaw, rentalGroups, sizes] = await Promise.all([
     prisma.renter.findUnique({
       where: { id },
-      select: {
-        id: true,
-        rentalGroupId: true,
-        studentCode: true,
-        fullName: true,
-        gender: true,
-        heightCm: true,
-        weightKg: true,
-        suggestedSizeId: true,
-        confirmedSizeId: true,
-        note: true,
+      include: {
+        productSizes: {
+          include: {
+            suggestedSize: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                sortOrder: true,
+              },
+            },
+            confirmedSize: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                sortOrder: true,
+              },
+            },
+            rentalGroupProduct: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    gender: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            rentalGroupProduct: {
+              sortOrder: "asc",
+            },
+          },
+        },
       },
     }),
     prisma.rentalGroup.findMany({
@@ -53,29 +78,31 @@ export default async function EditRenterPage({
     }),
   ]);
 
-  if (!renter) {
+  if (!renterRaw) {
     notFound();
   }
 
+  const firstProductSize = renterRaw.productSizes[0] ?? null;
+
+  const renter = {
+    id: renterRaw.id,
+    rentalGroupId: renterRaw.rentalGroupId,
+    studentCode: renterRaw.studentCode,
+    fullName: renterRaw.fullName,
+    gender: renterRaw.gender,
+    heightCm: renterRaw.heightCm,
+    weightKg: renterRaw.weightKg.toString(),
+    suggestedSizeId: firstProductSize?.suggestedSize?.id ?? null,
+    confirmedSizeId: firstProductSize?.confirmedSize?.id ?? null,
+    note: renterRaw.note,
+  };
+
   return (
-    <div className="space-y-6">
-      <RenterForm
-        mode="edit"
-        item={{
-          id: renter.id,
-          rentalGroupId: renter.rentalGroupId,
-          studentCode: renter.studentCode,
-          fullName: renter.fullName,
-          gender: renter.gender,
-          heightCm: renter.heightCm,
-          weightKg: renter.weightKg.toString(),
-          suggestedSizeId: renter.suggestedSizeId,
-          confirmedSizeId: renter.confirmedSizeId,
-          note: renter.note,
-        }}
-        rentalGroups={rentalGroups}
-        sizes={sizes}
-      />
-    </div>
+    <RenterForm
+      mode="edit"
+      item={renter}
+      rentalGroups={rentalGroups}
+      sizes={sizes}
+    />
   );
 }
