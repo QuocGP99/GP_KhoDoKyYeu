@@ -3,13 +3,13 @@ import bcrypt from "bcryptjs";
 import { PrismaClient, UserRole, ProductGender, ItemCondition } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { suggestSizesForRenter } from "@/lib/size-rule-engine";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
 const adapter = new PrismaPg(pool);
-
 const prisma = new PrismaClient({ adapter });
 
 async function seedUsersAndAccess() {
@@ -110,9 +110,7 @@ async function seedUserWarehouseAccess(params: {
         warehouseId: params.warehouseId,
       },
     },
-    update: {
-      isDefault: true,
-    },
+    update: { isDefault: true },
     create: {
       userId: params.adminId,
       warehouseId: params.warehouseId,
@@ -127,9 +125,7 @@ async function seedUserWarehouseAccess(params: {
         warehouseId: params.warehouseId,
       },
     },
-    update: {
-      isDefault: true,
-    },
+    update: { isDefault: true },
     create: {
       userId: params.staffId,
       warehouseId: params.warehouseId,
@@ -318,9 +314,7 @@ async function seedProductSizes(params: {
           sizeId: row.sizeId,
         },
       },
-      update: {
-        isDefault: row.isDefault,
-      },
+      update: { isDefault: row.isDefault },
       create: row,
     });
   }
@@ -335,7 +329,7 @@ async function seedItemStatuses() {
     { code: "DIRTY", name: "Bẩn", color: "#a855f7" },
     { code: "DAMAGED", name: "Hỏng", color: "#ef4444" },
     { code: "LOST", name: "Thất lạc", color: "#991b1b" },
-  ];
+  ] as const;
 
   const statuses: Record<string, { id: string; code: string }> = {};
 
@@ -378,54 +372,14 @@ async function seedItems(params: {
   };
 }) {
   const rows = [
-    {
-      itemCode: "ASM-S-001",
-      productId: params.products.shirtMaleId,
-      sizeId: params.sizes.s,
-      note: "Áo sơ mi nam size S",
-    },
-    {
-      itemCode: "ASM-M-001",
-      productId: params.products.shirtMaleId,
-      sizeId: params.sizes.m,
-      note: "Áo sơ mi nam size M",
-    },
-    {
-      itemCode: "ASM-L-001",
-      productId: params.products.shirtMaleId,
-      sizeId: params.sizes.l,
-      note: "Áo sơ mi nam size L",
-    },
-    {
-      itemCode: "QTN-M-001",
-      productId: params.products.pantsMaleId,
-      sizeId: params.sizes.m,
-      note: "Quần tây nam size M",
-    },
-    {
-      itemCode: "QTN-L-001",
-      productId: params.products.pantsMaleId,
-      sizeId: params.sizes.l,
-      note: "Quần tây nam size L",
-    },
-    {
-      itemCode: "ASN-S-001",
-      productId: params.products.shirtFemaleId,
-      sizeId: params.sizes.s,
-      note: "Áo sơ mi nữ size S",
-    },
-    {
-      itemCode: "ASN-M-001",
-      productId: params.products.shirtFemaleId,
-      sizeId: params.sizes.m,
-      note: "Áo sơ mi nữ size M",
-    },
-    {
-      itemCode: "PK-CAVAT-001",
-      productId: params.products.tieId,
-      sizeId: null,
-      note: "Cà vạt phụ kiện",
-    },
+    { itemCode: "ASM-S-001", productId: params.products.shirtMaleId, sizeId: params.sizes.s, note: "Áo sơ mi nam size S" },
+    { itemCode: "ASM-M-001", productId: params.products.shirtMaleId, sizeId: params.sizes.m, note: "Áo sơ mi nam size M" },
+    { itemCode: "ASM-L-001", productId: params.products.shirtMaleId, sizeId: params.sizes.l, note: "Áo sơ mi nam size L" },
+    { itemCode: "QTN-M-001", productId: params.products.pantsMaleId, sizeId: params.sizes.m, note: "Quần tây nam size M" },
+    { itemCode: "QTN-L-001", productId: params.products.pantsMaleId, sizeId: params.sizes.l, note: "Quần tây nam size L" },
+    { itemCode: "ASN-S-001", productId: params.products.shirtFemaleId, sizeId: params.sizes.s, note: "Áo sơ mi nữ size S" },
+    { itemCode: "ASN-M-001", productId: params.products.shirtFemaleId, sizeId: params.sizes.m, note: "Áo sơ mi nữ size M" },
+    { itemCode: "PK-CAVAT-001", productId: params.products.tieId, sizeId: null, note: "Cà vạt phụ kiện" },
   ];
 
   for (const row of rows) {
@@ -455,7 +409,8 @@ async function seedItems(params: {
 }
 
 async function seedSizeRuleSetAndRules(params: {
-  shirtCategoryId: string;
+  shirtMaleProductId: string;
+  shirtFemaleProductId: string;
   sizeIds: { s: string; m: string; l: string; xl: string };
 }) {
   const ruleSet = await prisma.sizeRuleSet.upsert({
@@ -476,86 +431,14 @@ async function seedSizeRuleSetAndRules(params: {
   });
 
   const rules = [
-    {
-      gender: "MALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 150,
-      maxHeightCm: 164,
-      minWeightKg: "40",
-      maxWeightKg: "54.99",
-      sizeId: params.sizeIds.s,
-      priority: 1,
-    },
-    {
-      gender: "MALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 165,
-      maxHeightCm: 171,
-      minWeightKg: "55",
-      maxWeightKg: "64.99",
-      sizeId: params.sizeIds.m,
-      priority: 2,
-    },
-    {
-      gender: "MALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 172,
-      maxHeightCm: 178,
-      minWeightKg: "65",
-      maxWeightKg: "74.99",
-      sizeId: params.sizeIds.l,
-      priority: 3,
-    },
-    {
-      gender: "MALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 179,
-      maxHeightCm: 190,
-      minWeightKg: "75",
-      maxWeightKg: "100",
-      sizeId: params.sizeIds.xl,
-      priority: 4,
-    },
-    {
-      gender: "FEMALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 145,
-      maxHeightCm: 156,
-      minWeightKg: "35",
-      maxWeightKg: "46.99",
-      sizeId: params.sizeIds.s,
-      priority: 5,
-    },
-    {
-      gender: "FEMALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 157,
-      maxHeightCm: 163,
-      minWeightKg: "47",
-      maxWeightKg: "54.99",
-      sizeId: params.sizeIds.m,
-      priority: 6,
-    },
-    {
-      gender: "FEMALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 164,
-      maxHeightCm: 170,
-      minWeightKg: "55",
-      maxWeightKg: "64.99",
-      sizeId: params.sizeIds.l,
-      priority: 7,
-    },
-    {
-      gender: "FEMALE" as const,
-      productCategoryId: params.shirtCategoryId,
-      minHeightCm: 171,
-      maxHeightCm: 185,
-      minWeightKg: "65",
-      maxWeightKg: "100",
-      sizeId: params.sizeIds.xl,
-      priority: 8,
-    },
+    { gender: "MALE" as const, productId: params.shirtMaleProductId, minHeightCm: 150, maxHeightCm: 164, minWeightKg: "40", maxWeightKg: "54.99", sizeId: params.sizeIds.s, priority: 1 },
+    { gender: "MALE" as const, productId: params.shirtMaleProductId, minHeightCm: 165, maxHeightCm: 171, minWeightKg: "55", maxWeightKg: "64.99", sizeId: params.sizeIds.m, priority: 2 },
+    { gender: "MALE" as const, productId: params.shirtMaleProductId, minHeightCm: 172, maxHeightCm: 178, minWeightKg: "65", maxWeightKg: "74.99", sizeId: params.sizeIds.l, priority: 3 },
+    { gender: "MALE" as const, productId: params.shirtMaleProductId, minHeightCm: 179, maxHeightCm: 190, minWeightKg: "75", maxWeightKg: "100", sizeId: params.sizeIds.xl, priority: 4 },
+    { gender: "FEMALE" as const, productId: params.shirtFemaleProductId, minHeightCm: 145, maxHeightCm: 156, minWeightKg: "35", maxWeightKg: "46.99", sizeId: params.sizeIds.s, priority: 5 },
+    { gender: "FEMALE" as const, productId: params.shirtFemaleProductId, minHeightCm: 157, maxHeightCm: 163, minWeightKg: "47", maxWeightKg: "54.99", sizeId: params.sizeIds.m, priority: 6 },
+    { gender: "FEMALE" as const, productId: params.shirtFemaleProductId, minHeightCm: 164, maxHeightCm: 170, minWeightKg: "55", maxWeightKg: "64.99", sizeId: params.sizeIds.l, priority: 7 },
+    { gender: "FEMALE" as const, productId: params.shirtFemaleProductId, minHeightCm: 171, maxHeightCm: 185, minWeightKg: "65", maxWeightKg: "100", sizeId: params.sizeIds.xl, priority: 8 },
   ];
 
   for (const rule of rules) {
@@ -563,7 +446,7 @@ async function seedSizeRuleSetAndRules(params: {
       data: {
         ruleSetId: ruleSet.id,
         gender: rule.gender,
-        productCategoryId: rule.productCategoryId,
+        productId: rule.productId,
         minHeightCm: rule.minHeightCm,
         maxHeightCm: rule.maxHeightCm,
         minWeightKg: rule.minWeightKg,
@@ -600,9 +483,7 @@ async function seedStockAlertRules(params: {
   ];
 
   for (const rule of rules) {
-    await prisma.stockAlertRule.create({
-      data: rule,
-    }).catch(() => null);
+    await prisma.stockAlertRule.create({ data: rule }).catch(() => null);
   }
 }
 
@@ -612,7 +493,10 @@ async function seedRentalDemo(params: {
   adminId: string;
   staffId: string;
   sizeMId: string;
+  shirtMaleProductId: string;
+  shirtFemaleProductId: string;
 }) {
+
   const group = await prisma.rentalGroup.upsert({
     where: { groupCode: "12A1-THPT-ABC-2026" },
     update: {
@@ -633,6 +517,52 @@ async function seedRentalDemo(params: {
       warehouseId: params.warehouseId,
       branchId: params.branchId,
       createdByUserId: params.adminId,
+    },
+  });
+
+  const shirtMaleRgp = await prisma.rentalGroupProduct.upsert({
+    where: {
+      rentalGroupId_productId: {
+        rentalGroupId: group.id,
+        productId: params.shirtMaleProductId,
+      },
+    },
+    update: {
+      quantityPlan: 1,
+      isActive: true,
+      sortOrder: 1,
+      note: "Áo sơ mi nam demo",
+    },
+    create: {
+      rentalGroupId: group.id,
+      productId: params.shirtMaleProductId,
+      quantityPlan: 1,
+      isActive: true,
+      sortOrder: 1,
+      note: "Áo sơ mi nam demo",
+    },
+  });
+
+  const shirtFemaleRgp = await prisma.rentalGroupProduct.upsert({
+    where: {
+      rentalGroupId_productId: {
+        rentalGroupId: group.id,
+        productId: params.shirtFemaleProductId,
+      },
+    },
+    update: {
+      quantityPlan: 1,
+      isActive: true,
+      sortOrder: 2,
+      note: "Áo sơ mi nữ demo",
+    },
+    create: {
+      rentalGroupId: group.id,
+      productId: params.shirtFemaleProductId,
+      quantityPlan: 1,
+      isActive: true,
+      sortOrder: 2,
+      note: "Áo sơ mi nữ demo",
     },
   });
 
@@ -660,10 +590,7 @@ async function seedRentalDemo(params: {
 
   const renter1 =
     (await prisma.renter.findFirst({
-      where: {
-        rentalGroupId: group.id,
-        rowNo: 1,
-      },
+      where: { rentalGroupId: group.id, rowNo: 1 },
     })) ??
     (await prisma.renter.create({
       data: {
@@ -675,17 +602,12 @@ async function seedRentalDemo(params: {
         gender: "MALE",
         heightCm: 170,
         weightKg: "60",
-        suggestedSizeId: params.sizeMId,
-        confirmedSizeId: params.sizeMId,
       },
     }));
 
   const renter2 =
     (await prisma.renter.findFirst({
-      where: {
-        rentalGroupId: group.id,
-        rowNo: 2,
-      },
+      where: { rentalGroupId: group.id, rowNo: 2 },
     })) ??
     (await prisma.renter.create({
       data: {
@@ -697,10 +619,46 @@ async function seedRentalDemo(params: {
         gender: "FEMALE",
         heightCm: 160,
         weightKg: "50",
-        suggestedSizeId: params.sizeMId,
-        confirmedSizeId: params.sizeMId,
       },
     }));
+
+  await prisma.renterProductSize.upsert({
+    where: {
+      renterId_rentalGroupProductId: {
+        renterId: renter1.id,
+        rentalGroupProductId: shirtMaleRgp.id,
+      },
+    },
+    update: {
+      confirmedSizeId: params.sizeMId,
+      note: "Size demo nam",
+    },
+    create: {
+      renterId: renter1.id,
+      rentalGroupProductId: shirtMaleRgp.id,
+      confirmedSizeId: params.sizeMId,
+      note: "Size demo nam",
+    },
+  });
+
+  await prisma.renterProductSize.upsert({
+    where: {
+      renterId_rentalGroupProductId: {
+        renterId: renter2.id,
+        rentalGroupProductId: shirtFemaleRgp.id,
+      },
+    },
+    update: {
+      confirmedSizeId: params.sizeMId,
+      note: "Size demo nữ",
+    },
+    create: {
+      renterId: renter2.id,
+      rentalGroupProductId: shirtFemaleRgp.id,
+      confirmedSizeId: params.sizeMId,
+      note: "Size demo nữ",
+    },
+  });
 
   const existingAllocationOrder = await prisma.allocationOrder.findFirst({
     where: {
@@ -773,32 +731,17 @@ async function main() {
 
   await seedProductSizes({
     productId: products.shirtMale.id,
-    sizeIds: {
-      s: sizes.s.id,
-      m: sizes.m.id,
-      l: sizes.l.id,
-      xl: sizes.xl.id,
-    },
+    sizeIds: { s: sizes.s.id, m: sizes.m.id, l: sizes.l.id, xl: sizes.xl.id },
   });
 
   await seedProductSizes({
     productId: products.pantsMale.id,
-    sizeIds: {
-      s: sizes.s.id,
-      m: sizes.m.id,
-      l: sizes.l.id,
-      xl: sizes.xl.id,
-    },
+    sizeIds: { s: sizes.s.id, m: sizes.m.id, l: sizes.l.id, xl: sizes.xl.id },
   });
 
   await seedProductSizes({
     productId: products.shirtFemale.id,
-    sizeIds: {
-      s: sizes.s.id,
-      m: sizes.m.id,
-      l: sizes.l.id,
-      xl: sizes.xl.id,
-    },
+    sizeIds: { s: sizes.s.id, m: sizes.m.id, l: sizes.l.id, xl: sizes.xl.id },
   });
 
   await seedItems({
@@ -819,7 +762,8 @@ async function main() {
   });
 
   await seedSizeRuleSetAndRules({
-    shirtCategoryId: categories.shirt.id,
+    shirtMaleProductId: products.shirtMale.id,
+    shirtFemaleProductId: products.shirtFemale.id,
     sizeIds: {
       s: sizes.s.id,
       m: sizes.m.id,
@@ -840,12 +784,14 @@ async function main() {
     },
   });
 
-  await seedRentalDemo({
+  const demo = await seedRentalDemo({
     branchId: branch.id,
     warehouseId: warehouse.id,
     adminId: admin.id,
     staffId: staff.id,
     sizeMId: sizes.m.id,
+    shirtMaleProductId: products.shirtMale.id,
+    shirtFemaleProductId: products.shirtFemale.id,
   });
 
   console.log("Seed hoàn tất");
@@ -856,9 +802,11 @@ async function main() {
 main()
   .then(async () => {
     await prisma.$disconnect();
+    await pool.end();
   })
   .catch(async (error) => {
     console.error(error);
     await prisma.$disconnect();
+    await pool.end();
     process.exit(1);
   });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { commitRenterImport } from "@/lib/import-renter-commit";
 import { REQUIRED_RENTER_HEADERS } from "@/lib/import-renter-validators";
+import { suggestSizesForRentalGroup } from "@/lib/size-rule-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +40,12 @@ function hasRequiredHeaders(rawHeaders: unknown[]) {
 function findBestSheet(workbook: XLSX.WorkBook) {
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
-    const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    const sheetRows = XLSX.utils.sheet_to_json(worksheet, {
       header: 1,
       raw: false,
       defval: "",
       blankrows: false,
-    });
+    }) as unknown[][];
 
     if (!sheetRows.length) continue;
 
@@ -66,7 +67,9 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
 
     const rentalGroupId = String(formData.get("rentalGroupId") ?? "").trim();
-    const uploadedByUserId = String(formData.get("uploadedByUserId") ?? "").trim();
+    const uploadedByUserId = String(
+      formData.get("uploadedByUserId") ?? ""
+    ).trim();
     const file = formData.get("file");
 
     if (!rentalGroupId) {
@@ -123,8 +126,35 @@ export async function POST(req: NextRequest) {
       rawRows,
     });
 
+    let sizeSuggestionTriggered = false;
+    const sizeSuggestionErrors: { rentalGroupId: string; message: string }[] = [];
+
+    for (const group of result.affectedRentalGroups) {
+      try {
+        await suggestSizesForRentalGroup({
+          rentalGroupId: group.id,
+        });
+        sizeSuggestionTriggered = true;
+      } catch (error) {
+        console.error(
+          `suggestSizesForRentalGroup after import error for group ${group.id}:`,
+          error
+        );
+
+        sizeSuggestionErrors.push({
+          rentalGroupId: group.id,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Không thể tính size gợi ý sau import",
+        });
+      }
+    }
+
     return NextResponse.json({
       ...result,
+      sizeSuggestionTriggered,
+      sizeSuggestionErrors,
       file: {
         name: file.name,
         size: file.size,
