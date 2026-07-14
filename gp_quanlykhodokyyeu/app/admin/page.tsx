@@ -51,12 +51,6 @@ const modules = [
   },
 ];
 
-const todos = [
-  "Hoàn thiện CRUD user cho admin.",
-  "Bổ sung form tạo và sửa user.",
-  "Kết nối dữ liệu thật từ Prisma cho dashboard.",
-  "Làm filter theo role và trạng thái user.",
-];
 
 export default function AdminPage() {
   return (
@@ -181,14 +175,9 @@ export default function AdminPage() {
               </p>
 
               <ul className="mt-4 space-y-3 text-sm text-slate-600">
-                {todos.map((item) => (
-                  <li
-                    key={item}
-                    className="rounded-xl bg-slate-50 px-4 py-3"
-                  >
-                    {item}
-                  </li>
-                ))}
+                <a href="/api/imports/renters/template" className="text-blue-500 hover:underline">
+                  Tải file mẫu import
+                </a>
               </ul>
             </div>
           </div>
